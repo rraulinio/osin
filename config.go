@@ -29,10 +29,10 @@ func (t AllowedAccessType) Exists(rt AccessRequestType) bool {
 // ServerConfig contains server configuration information
 type ServerConfig struct {
 	// Authorization token expiration in seconds (default 5 minutes)
-	AuthorizationExpiration int32
+	AuthorizationExpiration int64
 
 	// Access token expiration in seconds (default 1 hour)
-	AccessExpiration int32
+	AccessExpiration int64
 
 	// Token type to return
 	TokenType string
