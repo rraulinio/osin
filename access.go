@@ -42,7 +42,7 @@ type AccessRequest struct {
 	Authorized bool
 
 	// Token expiration in seconds. Change if different from default
-	Expiration int32
+	Expiration int64
 
 	// Set if a refresh token should be generated
 	GenerateRefresh bool
@@ -75,7 +75,7 @@ type AccessData struct {
 	RefreshToken string
 
 	// Token expiration in seconds
-	ExpiresIn int32
+	ExpiresIn int64
 
 	// Requested scope
 	Scope string
@@ -461,64 +461,63 @@ func (s *Server) FinishAccessRequest(w *Response, r *http.Request, ar *AccessReq
 	if ar.RedirectUri != "" {
 		redirectUri = ar.RedirectUri
 	}
-	if ar.Authorized {
-		var ret *AccessData
-		var err error
+	if !ar.Authorized {
+		s.setErrorAndLog(w, E_ACCESS_DENIED, nil, "finish_access_request=%s", "authorization failed")
+	}
+	var ret *AccessData
+	var err error
 
-		if ar.ForceAccessData == nil {
-			// generate access token
-			ret = &AccessData{
-				Client:        ar.Client,
-				AuthorizeData: ar.AuthorizeData,
-				AccessData:    ar.AccessData,
-				RedirectUri:   redirectUri,
-				CreatedAt:     s.Now(),
-				ExpiresIn:     ar.Expiration,
-				UserData:      ar.UserData,
-				Scope:         ar.Scope,
-			}
-
-			// generate access token
-			ret.AccessToken, ret.RefreshToken, err = s.AccessTokenGen.GenerateAccessToken(ret, ar.GenerateRefresh)
-			if err != nil {
-				s.setErrorAndLog(w, E_SERVER_ERROR, err, "finish_access_request=%s", "error generating token")
-				return
-			}
-		} else {
-			ret = ar.ForceAccessData
+	if ar.ForceAccessData != nil {
+		ret = ar.ForceAccessData
+	} else {
+		// generate access token
+		ret = &AccessData{
+			Client:        ar.Client,
+			AuthorizeData: ar.AuthorizeData,
+			AccessData:    ar.AccessData,
+			RedirectUri:   redirectUri,
+			CreatedAt:     s.Now(),
+			ExpiresIn:     ar.Expiration,
+			UserData:      ar.UserData,
+			Scope:         ar.Scope,
 		}
 
-		// save access token
-		if err = w.Storage.SaveAccess(ret); err != nil {
-			s.setErrorAndLog(w, E_SERVER_ERROR, err, "finish_access_request=%s", "error saving access token")
+		// generate access token
+		ret.AccessToken, ret.RefreshToken, err = s.AccessTokenGen.GenerateAccessToken(ret, ar.GenerateRefresh)
+		if err != nil {
+			s.setErrorAndLog(w, E_SERVER_ERROR, err, "finish_access_request=%s", "error generating token")
 			return
 		}
+	}
 
-		// remove authorization token
-		if ret.AuthorizeData != nil {
-			w.Storage.RemoveAuthorize(ret.AuthorizeData.Code)
-		}
+	// save access token
+	if err = w.Storage.SaveAccess(ret); err != nil {
+		s.setErrorAndLog(w, E_SERVER_ERROR, err, "finish_access_request=%s", "error saving access token")
+		return
+	}
 
-		// remove previous access token
-		if ret.AccessData != nil && !s.Config.RetainTokenAfterRefresh {
-			if ret.AccessData.RefreshToken != "" {
-				w.Storage.RemoveRefresh(ret.AccessData.RefreshToken)
-			}
-			w.Storage.RemoveAccess(ret.AccessData.AccessToken)
-		}
+	// remove authorization token
+	if ret.AuthorizeData != nil {
+		w.Storage.RemoveAuthorize(ret.AuthorizeData.Code)
+	}
 
-		// output data
-		w.Output["access_token"] = ret.AccessToken
-		w.Output["token_type"] = s.Config.TokenType
-		w.Output["expires_in"] = ret.ExpiresIn
-		if ret.RefreshToken != "" {
-			w.Output["refresh_token"] = ret.RefreshToken
+	// remove previous access token
+	if ret.AccessData != nil && !s.Config.RetainTokenAfterRefresh {
+		if ret.AccessData.RefreshToken != "" {
+			w.Storage.RemoveRefresh(ret.AccessData.RefreshToken)
 		}
-		if ret.Scope != "" {
-			w.Output["scope"] = ret.Scope
-		}
-	} else {
-		s.setErrorAndLog(w, E_ACCESS_DENIED, nil, "finish_access_request=%s", "authorization failed")
+		w.Storage.RemoveAccess(ret.AccessData.AccessToken)
+	}
+
+	// output data
+	w.Output["access_token"] = ret.AccessToken
+	w.Output["token_type"] = s.Config.TokenType
+	w.Output["expires_in"] = ret.ExpiresIn
+	if ret.RefreshToken != "" {
+		w.Output["refresh_token"] = ret.RefreshToken
+	}
+	if ret.Scope != "" {
+		w.Output["scope"] = ret.Scope
 	}
 }
 
