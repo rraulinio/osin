@@ -451,10 +451,10 @@ func (s *Server) handleAssertionRequest(w *Response, r *http.Request) *AccessReq
 	return ret
 }
 
-func (s *Server) FinishAccessRequest(w *Response, r *http.Request, ar *AccessRequest) {
+func (s *Server) FinishAccessRequest(w *Response, r *http.Request, ar *AccessRequest) error {
 	// don't process if is already an error
 	if w.IsError {
-		return
+		return errors.New("Response error exists, exiting method call")
 	}
 	redirectUri := r.FormValue("redirect_uri")
 	// Get redirect uri from AccessRequest if it's there (e.g., refresh token request)
@@ -463,6 +463,7 @@ func (s *Server) FinishAccessRequest(w *Response, r *http.Request, ar *AccessReq
 	}
 	if !ar.Authorized {
 		s.setErrorAndLog(w, E_ACCESS_DENIED, nil, "finish_access_request=%s", "authorization failed")
+		return errors.New("Authorization failed")
 	}
 	var ret *AccessData
 	var err error
@@ -486,14 +487,14 @@ func (s *Server) FinishAccessRequest(w *Response, r *http.Request, ar *AccessReq
 		ret.AccessToken, ret.RefreshToken, err = s.AccessTokenGen.GenerateAccessToken(ret, ar.GenerateRefresh)
 		if err != nil {
 			s.setErrorAndLog(w, E_SERVER_ERROR, err, "finish_access_request=%s", "error generating token")
-			return
+			return errors.New("Error generating token")
 		}
 	}
 
 	// save access token
 	if err = w.Storage.SaveAccess(ret); err != nil {
 		s.setErrorAndLog(w, E_SERVER_ERROR, err, "finish_access_request=%s", "error saving access token")
-		return
+		return errors.New("Error saving access token")
 	}
 
 	// remove authorization token
@@ -519,6 +520,7 @@ func (s *Server) FinishAccessRequest(w *Response, r *http.Request, ar *AccessReq
 	if ret.Scope != "" {
 		w.Output["scope"] = ret.Scope
 	}
+	return nil
 }
 
 // Helper Functions
